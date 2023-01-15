@@ -97,6 +97,13 @@ groups:
        url: https://oracle.com/
 ```
 
+This would lead to something like this:
+
+![miStatusBoard UI](doc/screenshot.png)
+
+
+![miStatusBoard UI](doc/screenshot_broken.png)
+
 ## CLI Arguments
 
 You can provide the following arguments when starting the application:
@@ -150,6 +157,7 @@ from the Certificate-Authority that is checked by `ssl_client_certificate`.
 
 Currently planned further development:
 
+- Make the app into a PWA
 - Enable parsing of JSON responses and support comparing sub-properties
 - Check endpoints only once even if used multiple times
 - Make sure there is a graceful error message for users with the right certificate but not in the allowlist
