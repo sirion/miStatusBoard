@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -24,13 +22,15 @@ type Server struct {
 	results          map[string]*Result
 	resultsChanged   bool
 	resultsCacheFile *os.File
+	startTime        time.Time
+	lastUpdate       time.Time
 }
 
 func NewServer(port uint, fs fs.ReadFileFS, cacheFile string, config *Configuration) *Server {
 	var err error
 	var resultsCacheFile *os.File
 	if cacheFile == "" {
-		resultsCacheFile, err = os.CreateTemp("", "ams_status_")
+		resultsCacheFile = nil
 	} else {
 		resultsCacheFile, err = os.OpenFile(cacheFile, os.O_RDWR|os.O_CREATE, os.ModePerm)
 	}
@@ -53,14 +53,17 @@ func (s *Server) setConfiguration(config *Configuration) {
 }
 
 func (s *Server) Run() error {
+	s.startTime = time.Now()
+
 	// Initialize web handler
 	webHandler := &http.ServeMux{}
 	webHandler.HandleFunc("/", s.handleRootRequest)
 	webHandler.HandleFunc("/api/", s.handleAPIRequest)
+	webHandler.HandleFunc("/status/", s.handleStatusRequest)
 
 	// Serve web application
 	s.webserver = &http.Server{
-		Addr:         fmt.Sprintf("localhost:%d", s.port),
+		Addr:         fmt.Sprintf(":%d", s.port),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -69,16 +72,18 @@ func (s *Server) Run() error {
 	}
 
 	s.results = make(map[string]*Result, len(s.configuration.Groups))
-	data, err := io.ReadAll(s.resultsCacheFile)
-	if err != nil {
-		s.resultsCacheFile.Truncate(0)
-		s.resultsCacheFile.Seek(0, 0)
-	} else {
-		err = json.Unmarshal(data, &s.results)
+	if s.resultsCacheFile != nil {
+		data, err := io.ReadAll(s.resultsCacheFile)
 		if err != nil {
-			outError("Could not parse cache file %s: %s\n", s.resultsCacheFile.Name(), err.Error())
-			outError("Starting without cache")
-			s.results = make(map[string]*Result, len(s.configuration.Groups))
+			s.resultsCacheFile.Truncate(0)
+			s.resultsCacheFile.Seek(0, 0)
+		} else {
+			err = json.Unmarshal(data, &s.results)
+			if err != nil {
+				outError("Could not parse cache file %s: %s\n", s.resultsCacheFile.Name(), err.Error())
+				outError("Starting without cache")
+				s.results = make(map[string]*Result, len(s.configuration.Groups))
+			}
 		}
 	}
 
@@ -95,6 +100,10 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) checkResultsUpdate() {
+	if s.resultsCacheFile == nil {
+		return
+	}
+
 	for s.Active {
 		time.Sleep(2 * time.Second)
 
@@ -156,43 +165,6 @@ func (s *Server) updateAllGroups() {
 	}
 }
 
-func (s *Server) authorized(r *http.Request) *Error {
-	// verify := r.Header.Get("X-SSL-Client-Verify")
-	// if verify != "SUCCESS" {
-	// 	return &Error{
-	// 		Code:    401,
-	// 		Message: "Client not authenticated",
-	// 	}
-	// }
-
-	sdn := strings.ToLower(r.Header.Get(s.configuration.Authorization.Header))
-	if sdn == "" {
-		return &Error{
-			Code:    401,
-			Message: "Client not authenticated",
-		}
-	}
-
-	var user string
-	sndParts := strings.Split(sdn, ",")
-	for _, part := range sndParts {
-		entry := strings.Split(strings.TrimSpace(part), "=")
-		if len(entry) == 2 && entry[0] == "cn" {
-			user = entry[1]
-			break
-		}
-	}
-
-	if !s.configuration.Authorization.authorizedUsers[user] {
-		return &Error{
-			Code:    403,
-			Message: "User not authorized",
-		}
-	}
-
-	return nil
-}
-
 func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 	uri := s.getEndpointUrl(group, endpoint)
 
@@ -200,6 +172,8 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 	if !ok {
 		result = &Result{}
 	}
+
+	s.lastUpdate = time.Now()
 
 	if uri == nil || group.Inactive || endpoint.Inactive {
 		result.Status = STATUS_INACTIVE
@@ -355,75 +329,4 @@ func (s *Server) respondRefresh(groupName string, endpointName string) any {
 
 	s.updateEndpoint(group, endpoint)
 	return s.respondRead(group.Name, endpoint.Name)
-}
-
-func (s *Server) handleAPIRequest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	err := s.authorized(r)
-	if err != nil {
-		s.respond(w, r, err)
-		return
-	}
-
-	parts := strings.Split(r.URL.Path, "/")[2:]
-
-	if len(parts) == 1 {
-		switch parts[0] {
-		case "config":
-			s.respond(w, r, s.respondConfig())
-
-		case "read":
-			s.respond(w, r, s.respondRead(r.URL.Query().Get("group"), r.URL.Query().Get("endpoint")))
-
-		case "refresh":
-			s.respond(w, r, s.respondRefresh(r.URL.Query().Get("group"), r.URL.Query().Get("endpoint")))
-
-		case "refreshAll":
-			s.updateAllGroups()
-			s.respond(w, r, s.respondReadAll())
-
-		case "readAll":
-			s.respond(w, r, s.respondReadAll())
-
-		default:
-			w.WriteHeader(599)
-			w.Write([]byte(fmt.Sprintf("{ \"message\": \"Not Yet Implemented\", \"details\": \"%#v\" }", parts)))
-
-		}
-	} else {
-		w.WriteHeader(599)
-		w.Write([]byte(fmt.Sprintf("{ \"message\": \"Not Yet Implemented\", \"details\": \"%#v\" }", parts)))
-	}
-
-}
-
-func (s *Server) handleRootRequest(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(r.URL.Path[1:], "/")
-	if parts[len(parts)-1] == "" {
-		parts[len(parts)-1] = "index.html"
-	}
-	path := strings.Join(parts, "/")
-
-	content, err := s.fs.ReadFile("frontend/" + path)
-	if err != nil {
-		outDebug("Frontend: Could not find path: %s", path)
-		w.WriteHeader(404)
-		w.Write([]byte("<!DOCTYPE html>"))
-		w.Write([]byte("<h1>404 - Not found</h1>"))
-		w.Write([]byte("<p>Path not found: "))
-		w.Write([]byte(path))
-		w.Write([]byte("</p>"))
-		return
-	}
-
-	nameParts := strings.Split(path, ".")
-	ext := nameParts[len(nameParts)-1]
-	tp := mime.TypeByExtension("." + ext)
-	if tp == "" {
-		tp = http.DetectContentType(content)
-	}
-	w.Header().Set("Content-Type", tp)
-	w.Write(content)
-
 }

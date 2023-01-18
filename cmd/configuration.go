@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v2"
@@ -17,6 +18,7 @@ type AuthorizationConfiguration struct {
 	Type            string   `yaml:"type" json:"-"`
 	Header          string   `yaml:"header" json:"-"`
 	Users           []string `yaml:"users" json:"-"`
+	Cert            string   `yaml:"cert" json:"-"`
 	authorizedUsers map[string]bool
 }
 
@@ -31,6 +33,10 @@ func ReadConfiguration(configPath string) (*Configuration, error) {
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.Authorization.Type == AUTH_TYPE_CERT && config.Authorization.Cert == "" {
+		return nil, fmt.Errorf("authorization.cert must be set when authorization.type is \"%s\"", config.Authorization.Type)
 	}
 
 	// Quick access map for authorization checking

@@ -36,21 +36,23 @@ func main() {
 		server.Active = false
 	}()
 
-	refreshChan := make(chan os.Signal, 1)
-	signal.Notify(refreshChan, syscall.SIGUSR1)
-	go func() {
-		for {
-			<-refreshChan
-			out("Reloading configuration...\n")
-			config, err := ReadConfiguration(args.ConfigFile)
-			if err != nil {
-				outError("Cannot reload configuration file %s: %s\n", args.ConfigFile, err.Error())
-			} else {
-				server.setConfiguration(config)
-				out("Configuration reloaded\n")
+	/*
+		refreshChan := make(chan os.Signal, 1)
+		signal.Notify(refreshChan, syscall.SIGUSR1)
+		go func() {
+			for {
+				<-refreshChan
+				out("Reloading configuration...\n")
+				config, err := ReadConfiguration(args.ConfigFile)
+				if err != nil {
+					outError("Cannot reload configuration file %s: %s\n", args.ConfigFile, err.Error())
+				} else {
+					server.setConfiguration(config)
+					out("Configuration reloaded\n")
+				}
 			}
-		}
-	}()
+		}()
+	*/
 
 	_ = server.Run() // Runs until server.Active is set to false
 }

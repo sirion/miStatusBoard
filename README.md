@@ -17,9 +17,18 @@ The configuration contains four top level elements:
 
 The `authorization` element has the following properties:
 
-- `type` - The type of authorization (currently only "client-cert")
+- `type` - The type of authorization can be one of:
+  - "none"
+  - "client-cert"
+  - "client-cert-info"
 
 If the type is "client-cert", then the following additional properties are used:
+
+- `header` - The header that contains the client certification as base64
+- `cert` - File path of the root certificate to verify against
+- `users` - The list of usernames (CN in the client certificate)
+
+If the type is "client-cert-info", then the following additional properties are used:
 
 - `header` - The header that is parsed for the user information (see [#web-server-configuration](Web-Server Configuration))
 - `users` - The list of usernames (CN in the client certificate)

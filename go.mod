@@ -1,4 +1,4 @@
-module cas-ams-sre-dashboard
+module github.com/sirion/miStatusBoard
 
 go 1.19
 

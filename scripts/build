@@ -1,0 +1,34 @@
+#!/bin/bash
+
+BUILDS=(
+	"darwin/arm64"
+	"linux/amd64"
+	"windows/amd64"
+)
+
+
+# Find script directory
+sd="$(dirname "$0")"
+
+repoDir="$(dirname "$sd")"
+cd "$repoDir" || exit
+
+if [[ ! -d "./_build" ]]; then
+	mkdir "./_build"
+fi
+
+echo "Compiling for platforms into _build/:"
+
+printf "Current: \t mi_status_board\n"
+go build -o ./_build/mi_status_board cmd/*.go
+
+count=${#BUILDS[@]}
+for ((i=0; i<count; i++)); do
+	build="${BUILDS[i]}"  
+	target=(${build//\// })
+	goos=${target[0]}
+	goarch=${target[1]}
+
+	printf "%s/%s: \t mi_status_board_%s_%s\n" "$goos" "$goarch" "$goos" "$goarch"
+	GOOS="$goos" GOARCH="$goarch" go build -o "./_build/mi_status_board_${goos}_${goarch}" cmd/*.go
+done

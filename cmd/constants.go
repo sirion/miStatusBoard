@@ -15,3 +15,9 @@ const (
 	STATUS_RED      Status = "red"
 	STATUS_INACTIVE Status = "grey"
 )
+
+const (
+	AUTH_TYPE_NONE      = "none"
+	AUTH_TYPE_CERT      = "client-cert"
+	AUTH_TYPE_CERT_INFO = "client-cert-info"
+)
