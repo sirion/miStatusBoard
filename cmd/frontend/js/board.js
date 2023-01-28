@@ -1,7 +1,7 @@
 import Dialog from "./ui/dialog.js";
 import { d, clear } from "./utils/domutils.js";
 
-export default class AmsStatus {
+export default class Board {
 
     constructor(apiUrl) {
         this.apiUrl = apiUrl;

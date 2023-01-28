@@ -1,0 +1,11 @@
+{
+	"name": "Landscape Status Overview",
+	"short_name": "miStatusBoard",
+	"description": "Landscape Status Overview",
+	"display": "standalone",
+	"orientation": "portrait",
+	"start_url": "/",
+	"background_color": "#ffffff",
+	"theme_color": "#33ff33",
+	"icons": []
+}
