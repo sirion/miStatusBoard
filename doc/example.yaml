@@ -1,0 +1,45 @@
+title: Are they all up?
+authorization:
+  type: none
+refreshInterval: 30
+groups:
+  - name: Shops
+    endpoints:
+     - name: Amazon
+       url: https://amazon.com/
+     - name: eBay
+       url: https://ebay.com/
+     - name: AliExpress
+       url: https://aliexpress.com/
+  - name: Dev
+    endpoints:
+     - name: Codeberg
+       url: https://codeberg.org/
+     - name: Github
+       url: https://github.com/
+     - name: GitLab
+       url: https://gitlab.com/
+     - name: BitBucket
+       url: https://bitbucket.com/
+  - name: Broken
+    endpoints:
+     - name: Invalid Domain
+       url: https://this-does-not-exist-i-hope.org/
+     - name: Wikipedia
+       url: https://wikipedia.org/
+     - name: Not found
+       url: https://google.com/this/does/not/exist/i/hope
+     - name: Android Connectivity Check
+       url: http://connectivitycheck.android.com/generate_204
+       targetStatus:
+         code: 204
+     - name: Google
+       inactive: true
+       url: https://google.com/
+  - name: Disabled Group
+    inactive: true
+    endpoints:
+     - name: SAP
+       url: https://sap.com/
+     - name: Oracle
+       url: https://oracle.com/

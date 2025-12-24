@@ -106,7 +106,7 @@ groups:
        url: https://oracle.com/
 ```
 
-This would lead to something like this:
+[This](doc/example.yaml) would lead to something like this:
 
 ![miStatusBoard UI](doc/screenshot.png)
 
