@@ -3,13 +3,19 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,10 +26,13 @@ type Server struct {
 	configuration    *Configuration
 	webserver        *http.Server
 	results          map[string]*Result
+	resultsMutex     sync.Mutex
 	resultsChanged   bool
 	resultsCacheFile *os.File
 	startTime        time.Time
 	lastUpdate       time.Time
+	httpClient       *http.Client
+	updateInProgress bool
 }
 
 func NewServer(port uint, fs fs.ReadFileFS, cacheFile string, config *Configuration) *Server {
@@ -38,12 +47,28 @@ func NewServer(port uint, fs fs.ReadFileFS, cacheFile string, config *Configurat
 		outFatal(EXIT_CACHE_FILE, "Could not open cache file: %s\n", err.Error())
 	}
 
+	httpClient := &http.Client{
+		Timeout: time.Duration(config.RefreshInterval) * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return errors.New("redirects are not allowed")
+		},
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+			DisableCompression:  true,
+			DisableKeepAlives:   true,
+			MaxIdleConnsPerHost: 1,
+		},
+	}
+
 	return &Server{
 		Active:           true,
 		port:             port,
 		fs:               fs,
 		configuration:    config,
 		resultsCacheFile: resultsCacheFile,
+		httpClient:       httpClient,
 	}
 }
 
@@ -153,24 +178,41 @@ func (s *Server) checkUpdateGroups() {
 			s.updateAllGroups()
 			nextUpdate = time.Now().Add(time.Duration(int64(s.configuration.RefreshInterval) * int64(time.Second)))
 		}
-		time.Sleep(10 * time.Second)
+
+		time.Sleep(3 * time.Second)
 	}
 }
 
 func (s *Server) updateAllGroups() {
+	allDone := make([]chan bool, 0, 100)
 	for _, group := range s.configuration.Groups {
 		for _, endpoint := range group.Endpoints {
-			s.updateEndpoint(group, endpoint)
+			done := make(chan bool, 1)
+			allDone = append(allDone, done)
+			go func(group *Group, endpoint *Endpoint, done chan bool) {
+				s.updateEndpoint(group, endpoint)
+				done <- true
+			}(group, endpoint, done)
 		}
+	}
+
+	for _, done := range allDone {
+		<-done
 	}
 }
 
 func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 	uri := s.getEndpointUrl(group, endpoint)
 
+	s.resultsMutex.Lock()
 	result, ok := s.results[uri.String()]
 	if !ok {
 		result = &Result{}
+	}
+	s.resultsMutex.Unlock()
+
+	if time.Since(result.Updated).Seconds() < s.configuration.RefreshInterval {
+		return
 	}
 
 	s.lastUpdate = time.Now()
@@ -179,18 +221,83 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 		result.Status = STATUS_INACTIVE
 		result.Updated = time.Now()
 		s.resultsChanged = result.Status != STATUS_INACTIVE
-	} else {
-		// Do not refresh more than once per minute
-		if time.Since(result.Updated).Seconds() < s.configuration.RefreshInterval {
-			return
+	} else if uri.Scheme == "tcp" {
+		// TCP target
+		hostname := uri.Hostname()
+		port := uri.Port()
+		if port == "" {
+			port = "80"
 		}
+
+		conn, err := net.Dial(uri.Scheme, net.JoinHostPort(hostname, port))
+		if err != nil {
+			result.Status = STATUS_RED
+			result.ContentType = "text/plain"
+			result.Body = []byte(err.Error())
+		} else {
+			result.Status = STATUS_GREEN
+			conn.Close()
+		}
+		result.Updated = time.Now()
+
+	} else if uri.Scheme == "ping" {
+		// Ping target
+		// TODO: Workaround. Replace with actually pinging via Go library
+		cmd := exec.Command("/bin/sh", "-c", "/bin/ping -c 1 -w 5 -q "+uri.Hostname())
+		out, err := cmd.CombinedOutput()
+
+		if err != nil {
+			result.Status = STATUS_RED
+			result.ContentType = "text/plain"
+			result.Body = []byte(err.Error() + "\n-----\n" + string(out))
+		} else {
+			fmt.Fprintf(os.Stderr, "Ping result for %s:\n\n%s\n\n", uri.Hostname(), string(out))
+
+			if err != nil {
+				result.Status = STATUS_RED
+				result.ContentType = "text/plain"
+				out = append([]byte(err.Error()), []byte("\n-----\n"+string(out))...)
+				result.Body = []byte(out)
+			} else if strings.Contains(string(out), "0 packets received") {
+				result.Status = STATUS_RED
+				result.ContentType = "text/plain"
+				result.Body = []byte(out)
+			} else {
+				result.Status = STATUS_GREEN
+			}
+		}
+		result.Updated = time.Now()
+
+	} else if uri.Scheme == "https" || uri.Scheme == "http" {
+		// Do not refresh more than once per minute
 
 		result.Status = STATUS_GREEN
 
+		var response *http.Response
+		var err error
+
 		startTime := time.Now()
-		response, err := http.Get(uri.String())
+
+		httpMethod := s.configuration.DefaultHttpMethod
+		if endpoint.Method != "" {
+			httpMethod = endpoint.Method
+		}
+
+		switch httpMethod {
+		case http.MethodHead:
+			response, err = s.httpClient.Head(uri.String())
+		case http.MethodGet:
+			response, err = s.httpClient.Get(uri.String())
+		default:
+			err = fmt.Errorf("unsupported HTTP method for client request: %s", httpMethod)
+		}
+		if response != nil {
+			defer response.Body.Close()
+		}
+
 		result.RequestDuration = time.Since(startTime).Seconds()
 		result.Updated = time.Now()
+
 		if err != nil {
 			result.Body = []byte(err.Error())
 			result.Code = 999
@@ -198,14 +305,21 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 		} else {
 			result.Code = response.StatusCode
 
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				result.Body = []byte(err.Error())
-				result.Code = 998
-				result.Status = STATUS_RED
+			body := []byte{}
+			if httpMethod == http.MethodHead {
+				// For HEAD requests, we do not have a body to compare
+				result.Status = STATUS_GREEN
+				result.Body = nil
 			} else {
-				result.ContentType = response.Header.Get("Content-Type")
-				result.Body = body
+				body, err = io.ReadAll(response.Body)
+				if err != nil {
+					result.Body = []byte(err.Error())
+					result.Code = 998
+					result.Status = STATUS_RED
+				} else {
+					result.ContentType = response.Header.Get("Content-Type")
+					result.Body = body
+				}
 			}
 
 			if endpoint.TargetStatus.Code == 0 {
@@ -240,12 +354,18 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 			// Check response status
 			result.Status = STATUS_RED
 		}
+		result.Updated = time.Now()
 
 		outDebug("GET %s%s --> %d (%f)\n", group.URL, endpoint.URL, result.Code, result.RequestDuration)
 		s.resultsChanged = true
+	} else {
+		outError("Invalid URL scheme for endpoint %s in group %s: %s", endpoint.Name, group.Name, uri.Scheme)
+		result.Status = STATUS_RED
 	}
 
-	s.results[uri.String()] = result
+	s.resultsMutex.Lock()
+	defer s.resultsMutex.Unlock()
+	s.results[endpoint.URL] = result
 }
 
 func (s *Server) respond(w http.ResponseWriter, r *http.Request, response any) {

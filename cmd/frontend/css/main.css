@@ -29,8 +29,8 @@ body.busy {
   to {   background-color: black; }
 }
 
-.overview > .active,
-.overview > .inactive {
+.overview > .active > .tiles,
+.overview > .inactive > .tiles {
     display: grid;
     grid-template-columns: repeat(3, 28vmin);
     grid-auto-rows: 28vmin;
@@ -49,6 +49,7 @@ body.busy {
 
 	display: grid;
     grid-template-areas: "t" "d";
+    grid-template-columns: 100%;
     align-content: space-evenly;
     justify-items: center;
     justify-content: center;
@@ -86,6 +87,7 @@ body.busy {
     padding: 1vmin;
     margin: 0 2vmin;
     border-radius: 0.5rem;
+    justify-content: center;
 }
 
 .tile > .dots > .dot {

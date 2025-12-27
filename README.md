@@ -11,7 +11,32 @@ The configuration contains four top level elements:
 - `title` - The title shown in the UI
 - `refreshInterval` - The number of seconds between endpoint requests
 - `authorization` - How to make sure the accessing user is authorized
+- `default_http_method:` - The default HTTP method to use for "http://" or "https://" urls.
 - `groups` - The groups (of endpoints) that are monitored
+
+### Groups
+
+The `groups` property is an array of groups, which have the following properties:
+
+- `inactive` - If set to true, the group will be shown greyed out in the UI and the endpoints will not be checked
+- `name` - The name to be shown as title in the UI
+- `category` - If category is set, the group will be separated from other groups
+- `url` - The base URL used for all endpoints that use relative URLs
+- `forced_status` - If set the status of the group never changes. Can be "green", "yellow", "red" or "grey"
+- `endpoints` - A list of endpoints for the group
+
+### Endpoints
+
+The group's `endpoints` property is an array of endpoints, which have the following properties:
+
+- `inactive` -  If set to true, the endpoint will be shown greyed out in the UI and will not be requested
+- `name` - The name to be shown in the UI-endpoints-table
+- `url` - The endpoint URL. If relative, the group-URL will be used to resolve it. In addition to "http" and "https", "tcp" is also supported, which only opens a connection on the specified port and closes it directly.
+- `method` - The HTTP-method to use if url starts with "http://" or "https://".
+- `targetStatus` - The status to test for. If not set checks for status code in the 200 range. It contains the following sub-properties:
+  - `code` - (Default: 200) The status code that the endpoint-request should return (not relevant when using "ping://").
+  - `body` - (Default: "") If not set to an empty string, the returned data from the endpoint is compared to this. The string must be in base64 to support binary data (not relevant when using "tcp://").
+
 
 ### Authorization
 
@@ -32,26 +57,6 @@ If the type is "client-cert-info", then the following additional properties are 
 
 - `header` - The header that is parsed for the user information (see [#web-server-configuration](Web-Server Configuration))
 - `users` - The list of usernames (CN in the client certificate)
-
-### Groups
-
-The `groups` property is an array of groups, which have the following properties:
-
-- `inactive` - If set to true, the group will be shown greyed out in the UI and the endpoints will not be checked
-- `name` - The name to be shown as title in the UI
-- `url` - The base URL used for all endpoints that use relative URLs
-- `endpoints` - A list of endpoints for the group
-
-### Endpoints
-
-The group's `entpointss` property is an array of endpoints, which have the following properties:
-
-- `inactive` -  If set to true, the endpoint will be shown greyed out in the UI and will not be requested
-- `name` - The name to be shown in the UI-endpoints-table
-- `url` - The endpoint URL. If relative, the group-URL will be used to resolve it
-- `targetStatus` - The status to test for. If not set checks for status code in the 200 range. It contains the following sub-properties:
-  - `code` - (Default: 200) The status code that the endpoint-request should return.
-  - `body` - (Default: "") If not set to an empty string, the returned data from the endpoint is compared to this. The string must be in base64 to support binary data.
 
 ### Example Configuration
 
@@ -166,11 +171,6 @@ from the Certificate-Authority that is checked by `ssl_client_certificate`.
 
 Currently planned further development:
 
-- Make the app into a PWA
 - Enable parsing of JSON responses and support comparing sub-properties
-- Check endpoints only once even if used multiple times
 - Make sure there is a graceful error message for users with the right certificate but not in the allowlist
-- Allow empty allowlist (maybe nil vs []) to mean all certified users may access
-- Support disabling authorization completely
-- Support using HEAD instead of GET if we do not need a response body
 - Live-Frontend directory in debug mode should be checked for existence.

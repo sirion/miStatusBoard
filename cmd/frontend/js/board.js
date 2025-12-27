@@ -22,7 +22,7 @@ export default class Board {
             this._promiseData = this.request("readAll");
             this.data = await this._promiseData;
             this.updateTiles();
-        }, 60000);
+        }, this.config.refresh_interval * 500); // Request more often than backend refreshes
     }
 
 
@@ -54,6 +54,10 @@ export default class Board {
     };
 
     formatRelativeTime(date, referenceDate = new Date()) {
+        if (isNaN(date)) {
+            return "??";
+        }
+
         const delta = date - referenceDate;
 
         for (const step in this.rtMs) {
@@ -88,7 +92,7 @@ export default class Board {
 
         const el = element.getBoundingClientRect();
         const re = reference.getBoundingClientRect();
-        const rScale = /scale\(.?\)/;
+        const rScale = /scale\(.*\)/;
 
         const widthRatio = el.width / re.width;
         const heightRatio = el.height / re.height;
@@ -109,10 +113,14 @@ export default class Board {
 
         const tile = this.groupTile(group)
 
-
-
-        tile.classList.toggle("inactive", group.inactive);
-        (group.inactive ? inactiveGrid : activeGrid).append(tile);
+        const parent =  group.inactive ? inactiveGrid : activeGrid;
+        let tiles = parent.querySelector(`.tiles.category_${group.category}`);
+        if (!tiles) {
+            tiles = document.createElement("div");
+            tiles.classList.add("tiles", `category_${group.category}`);
+            parent.append(document.createElement("hr"), tiles);
+        }
+        tiles.append(tile);
 
         const statusDots = tile.querySelector(".dots");
         clear(statusDots);
@@ -125,9 +133,9 @@ export default class Board {
         };
 
         for (const endpoint of group.endpoints) {
-            const url = new URL(endpoint.url, group.url || undefined);
+            // const url = new URL(endpoint.url, group.url || undefined);
 
-            let st = this.data?.[url.toString()]?.status;
+            let st = this.data?.[endpoint.url]?.status;
             if (!st) {
                 // Data not available yet
                 st = "grey";
@@ -143,14 +151,15 @@ export default class Board {
             statusDots.append(statusDot)
         }
 
-        if (group.inactive) {
-            tile.classList.add(`status_grey`);
-        } else if (status.red > status.green) {
-            tile.classList.add(`status_red`);
-        } else if (status.red > 0) {
-            tile.classList.add(`status_yellow`);
+
+        if (group.forced_status) {
+            tile.classList.add(`status_${group.forced_status}`);
+        }  else if (group.inactive) {
+            tile.classList.toggle(`status_grey`, group.inactive);
         } else {
-            tile.classList.add(`status_green`);
+            tile.classList.toggle(`status_red`, status.red > status.green);
+            tile.classList.toggle(`status_yellow`, status.red > 0 || status.yellow > 0);
+            tile.classList.toggle(`status_green`, status.red === 0 && status.yellow === 0);
         }
     }
 
@@ -181,6 +190,7 @@ export default class Board {
                 this.displayGroupDetails(group);
             });
         }
+        tile.classList.toggle("inactive", group.inactive);
         return tile;
     }
 
@@ -194,28 +204,39 @@ export default class Board {
             return -1;
         })
 
+        
         const rows = sortedEndpoints.map(endpoint => {
-            const url = new URL(endpoint.url, group.url || undefined);
-            const e = this.data[url.toString()];
+            const url = (endpoint.url.startsWith("http://") || endpoint.url.startsWith("https://")) ? endpoint.url : "";
+            const e = this.data[endpoint.url];
+            const status = e?.status ?? "grey"; 
+            const code = (e?.code ?? 999) == 999 ? "-" : e?.code;
             return {
                 type: "tr",
-                classes: ["status_" + e.status],
+                classes: ["status_" + status],
                 children: [{
                     type: "td",
-                    textContent: endpoint.name
+                    children: [{
+                        type: "a",
+                        textContent: endpoint.name,
+                        attributes: {
+                            href: url,
+                            target: "_blank",
+                            rel: "noopener noreferrer"
+                        }
+                    }],
                 }, {
                     type: "td",
-                    textContent: e.code
+                    textContent: code
                 }, {
                     type: "td",
-                    textContent: endpoint.inactive ? "inactive" : this.formatRelativeTime(new Date(e.updated))
+                    textContent: endpoint.inactive ? "inactive" : this.formatRelativeTime(new Date(e?.updated))
                 }, {
                     type: "td",
                     children: [{
                         type: "button",
-                        textContent: "body",
+                        textContent: "?",
                         style: {
-                            display: (!e.body || endpoint.inactive) ? "none" : undefined
+                            display: (!e?.body || endpoint.inactive) ? "none" : undefined
                         },
                         events: {
                             click: event => {
@@ -225,7 +246,7 @@ export default class Board {
                                 const shortened = body.length > 28;
 
                                 let content;
-                                if (e.contentType.startsWith("application/json")) {
+                                if (e.content_type.startsWith("application/json")) {
                                     try {
                                         body = JSON.stringify(JSON.parse(body), null, 2);
                                     } catch (ex) {
@@ -235,16 +256,15 @@ export default class Board {
 
 
 
-                                if (e.contentType.startsWith("text/html")) {
+                                if (e.content_type.startsWith("text/html")) {
                                     content = d({
-                                        type: "iframe",
+                                        type: "div",
+                                        textContent: body,
                                         style: {
                                             "min-width": "30vw",
-                                            "max-width": "85vw"
+                                            "max-width": "85vw",
+                                            "text-wrap": "pre-wrap",
                                         }
-                                    });
-                                    content.addEventListener("load", () => {
-                                        content.contentWindow.document.write(body);
                                     });
                                 } else {
                                     content = d({

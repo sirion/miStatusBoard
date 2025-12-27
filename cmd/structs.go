@@ -8,16 +8,19 @@ import (
 )
 
 type Group struct {
-	Inactive  bool        `yaml:"inactive" json:"inactive"`
-	Name      string      `yaml:"name" json:"name"`
-	URL       string      `yaml:"url" json:"url"`
-	Endpoints []*Endpoint `yaml:"endpoints,omitempty" json:"endpoints,omitempty"`
+	Inactive     bool        `yaml:"inactive" json:"inactive"`
+	Name         string      `yaml:"name" json:"name"`
+	Category     string      `yaml:"category,omitempty" json:"category,omitempty"`
+	URL          string      `yaml:"url" json:"url"`
+	Endpoints    []*Endpoint `yaml:"endpoints,omitempty" json:"endpoints,omitempty"`
+	ForcedStatus Status      `yaml:"forced_status,omitempty" json:"forced_status,omitempty"`
 }
 
 type Endpoint struct {
 	Inactive     bool         `yaml:"inactive" json:"inactive"`
 	Name         string       `yaml:"name" json:"name"`
 	URL          string       `yaml:"url" json:"url"`
+	Method       string       `yaml:"method" json:"method"`
 	TargetStatus TargetStatus `yaml:"targetStatus" json:"targetStatus"`
 }
 
@@ -35,9 +38,9 @@ type Result struct {
 	Status Status `json:"status"`
 
 	Code            int       `json:"code"`
-	ContentType     string    `json:"contentType"`
+	ContentType     string    `json:"content_type"`
 	Body            []byte    `json:"body"`
-	RequestDuration float64   `json:"requestDuration"`
+	RequestDuration float64   `json:"request_duration"`
 	Updated         time.Time `json:"updated"`
 }
 
