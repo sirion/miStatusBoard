@@ -15,3 +15,6 @@
 
 # Build output
 _build/
+
+cache.json
+config.yaml

@@ -17,7 +17,7 @@ export default class Board {
         this.data = await this._promiseData;
         this.updateTiles();
 
-        // Refresh every minute;
+        // Refresh every minute;^
         setInterval(async () => {
             this._promiseData = this.request("readAll");
             this.data = await this._promiseData;
@@ -28,12 +28,21 @@ export default class Board {
 
     async request(url) {
         const response = await fetch(this.apiUrl + url);
-        return response.json();
+        const data = await response.json();
+        data.__lastUpdated = Object.values(data).reduce((max, e) => {
+            if (!e || e.updated === undefined || e.updated === null) {
+                return max;
+            }
+            const t = new Date(e.updated).getTime();
+            return t > max ? t : max;
+        }, Number.NaN);
+        return data;
     }
 
     updateTiles() {
         document.querySelector("title").textContent = this.config.title;
         document.querySelector(".mainTitle").textContent = this.config.title;
+        document.querySelector(".lastUpdated").textContent = this.formatRelativeTime(new Date(this.data.__lastUpdated));
 
         for (const group of this.config.groups) {
             this.updateTile(group);
@@ -114,11 +123,20 @@ export default class Board {
         const tile = this.groupTile(group)
 
         const parent =  group.inactive ? inactiveGrid : activeGrid;
-        let tiles = parent.querySelector(`.tiles.category_${group.category}`);
+        let tiles = (group.inactive ? inactiveGrid : activeGrid).querySelector(`.tiles.category_${group.category}`);
+        let oldTiles = (group.inactive ? activeGrid : inactiveGrid).querySelector(`.tiles.category_${group.category}`);
+
+        if (oldTiles) {
+            oldTiles.remove();
+        }
+
         if (!tiles) {
+            if (parent.children.length > 0) {
+                parent.append(document.createElement("hr"));
+            }
             tiles = document.createElement("div");
             tiles.classList.add("tiles", `category_${group.category}`);
-            parent.append(document.createElement("hr"), tiles);
+            parent.append(tiles);
         }
         tiles.append(tile);
 

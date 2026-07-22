@@ -1,4 +1,4 @@
-const cacheName = "v0.2.0";
+const cacheName = "v0.2.1a";
 
 const cacheURIs = [
 	"/index.html",
@@ -66,6 +66,6 @@ self.addEventListener("fetch", e => {
 	if (!isAPI) {
 		e.respondWith(cachedRequest(e.request));
 	} else if (e.request.method === "GET") {
-		e.respondWith(fetch(request));
+		e.respondWith(fetch(e.request));
 	}
 });

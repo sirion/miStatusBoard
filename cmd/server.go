@@ -142,6 +142,11 @@ func (s *Server) checkResultsUpdate() {
 				if err != nil {
 					outError("Cannot save results to cache: Error truncating cache file")
 				}
+				_, err = s.resultsCacheFile.Seek(0, 0)
+				if err != nil {
+					outError("Cannot save results to cache: Error resetting cache file position")
+				}
+
 				written, err := s.resultsCacheFile.Write(data)
 				if err != nil {
 					outError("Cannot save results to cache: %s", err.Error())
@@ -204,10 +209,17 @@ func (s *Server) updateAllGroups() {
 func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 	uri := s.getEndpointUrl(group, endpoint)
 
+	var result *Result
+	var ok bool
+
 	s.resultsMutex.Lock()
-	result, ok := s.results[uri.String()]
-	if !ok {
+	if uri == nil {
 		result = &Result{}
+	} else {
+		result, ok = s.results[uri.String()]
+		if !ok {
+			result = &Result{}
+		}
 	}
 	s.resultsMutex.Unlock()
 
@@ -220,7 +232,7 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 	if uri == nil || group.Inactive || endpoint.Inactive {
 		result.Status = STATUS_INACTIVE
 		result.Updated = time.Now()
-		s.resultsChanged = result.Status != STATUS_INACTIVE
+		s.resultsChanged = true
 	} else if uri.Scheme == "tcp" {
 		// TCP target
 		hostname := uri.Hostname()
@@ -253,12 +265,7 @@ func (s *Server) updateEndpoint(group *Group, endpoint *Endpoint) {
 		} else {
 			fmt.Fprintf(os.Stderr, "Ping result for %s:\n\n%s\n\n", uri.Hostname(), string(out))
 
-			if err != nil {
-				result.Status = STATUS_RED
-				result.ContentType = "text/plain"
-				out = append([]byte(err.Error()), []byte("\n-----\n"+string(out))...)
-				result.Body = []byte(out)
-			} else if strings.Contains(string(out), "0 packets received") {
+			if strings.Contains(string(out), "0 packets received") {
 				result.Status = STATUS_RED
 				result.ContentType = "text/plain"
 				result.Body = []byte(out)
@@ -425,6 +432,13 @@ func (s *Server) respondRead(groupName string, endpointName string) any {
 	endpoint := s.endpointByName(group, endpointName)
 
 	uri := s.getEndpointUrl(group, endpoint)
+
+	if uri == nil {
+		return Error{
+			Code:    400,
+			Message: "Invalid group/endpoint selection",
+		}
+	}
 
 	res, ok := s.results[uri.String()]
 	if !ok {
